@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<title>test</title>
+
+	<style type="text/css">
+		div.diagrams {
+			width: 100%;
+		}
+
+		div.diagrams div {
+			float: left;
+			border: solid 1px blue;
+			width: 49%;
+			height: 900px;
+		}
+	</style>
+
+	<script type="text/javascript" src="libs/jquery-3.1.0.js"></script>
+	<script type="text/javascript" src="libs/go.js"></script>
+	<script type="text/javascript" src="libs/go-src-debug.js"></script>
+
+	<script type="text/javascript">
+		$(function() {
+			var diagrams = {};
+			var defaultLayouters = {};
+
+			init();
+
+			return void(0);
+
+			function init() {
+
+				bindTypeHandler();
+				layoutDefault();
+				initDefaultLayouters();
+
+				$('#zoomToFit').on('click', function() {
+					originalDiagramDiv.zoomToFit();
+					myDiagramDiv.zoomToFit();
+				});
+				$('#zoomToDefault').on('click', function() {
+					originalDiagramDiv.scale = 1;
+					myDiagramDiv.scale = 1;
+				});
+
+				$('#layoutOriginalDiagram').click(function() {
+					Layout(originalDiagramDiv);
+				});
+
+				$('#layoutNewDiagram').click(function() {
+					Layout(myDiagramDiv);
+				});
+
+				$('#forceDirected').click(forceDirected);
+				$('#forceDirectedPartial').click(forceDirectedPartial);
+			}
+
+			function forceDirected() {
+				var layouter = new go.ForceDirectedLayout();
+				layouter.doLayout(originalDiagramDiv);
+				layouter.doLayout(myDiagramDiv);
+			}
+
+			function forceDirectedPartial() {
+				var layouter = new go.ForceDirectedLayout();
+				layouter.doLayout(getNotLockedNodes(originalDiagramDiv));
+				layouter.doLayout(getNotLockedNodes(myDiagramDiv));
+			}
+
+			function getNotLockedNodes(diagram) {
+				var nodes = new go.Set(go.Node);
+
+				it = diagram.nodes;
+				while (it.next()) {
+					let node = it.value;
+					if (!node.data.isLocked) {
+						nodes.add(node);
+					}
+				}
+
+				return nodes;
+			}
+
+			function initDefaultLayouters() {
+				defaultLayouters.tree = new go.TreeLayout();
+				defaultLayouters.forceDirected = new go.ForceDirectedLayout();
+				defaultLayouters.circle = new go.CircularLayout();
+			}
+
+			function Layout(diagram) {
+				var type = $('input[name="layoutType"]:checked').val();
+				var layouter = defaultLayouters[type];
+				layouter.doLayout(diagram);
+			}
+
+			function layoutDefault() {
+				$('#types button[default]').click();
+			}
+
+			function bindTypeHandler(id) {
+				var buttons = $('#types button')
+					.click(function() {
+						var type = $(this).attr('id');
+						layoutFor('originalDiagramDiv', type + '_orig');
+						layoutFor('myDiagramDiv', type);
+					});
+				buttons.each(function(index, button) {
+					let btn = $(button);
+					btn.text(btn.attr('id'));
+				});
+			}
+
+			function layoutFor(id, type) {
+				$.ajax({
+						dataType: "json",
+						url: `./data/${type}.js`,
+						cache: false,
+					})
+					.then(function(data) {
+						layout(id, data);
+					});
+			}
+
+			function layout(id, data) {
+				var diagram = prepareDiagram(id);
+
+				diagram.model.nodeDataArray = [];
+				diagram.model.linkDataArray = [];
+
+				diagram.model.nodeDataArray = data.nodeDataArray;
+				diagram.model.linkDataArray = data.linkDataArray;
+
+				$('#zoomToFit').click();
+			}
+
+			function prepareDiagram(id) {
+				return diagrams[id] ||
+					(window[id] = diagrams[id] = createDiagram(id));
+			}
+
+			function createDiagram(id) {
+				var diagram =
+					window.diagram =
+					new go.Diagram(id);
+
+				diagram.nodeTemplate = createNodeTemplate();
+				diagram.linkTemplate = createLinkTemplate();
+				// console.log(diagram.linkTemplate);
+
+				diagram.initialContentAlignment = go.Spot.Center;
+				diagram.undoManager.isEnabled = true;
+				// diagram.autoScale = go.Diagram.None;
+				// diagram.autoScale = go.Diagram.Uniform;
+
+				return diagram;
+			}
+
+			function createLinkTemplate() {
+				var $ = go.GraphObject.make;
+				return $(go.Link, {
+						toShortLength: 1,
+						relinkableFrom: true,
+						relinkableTo: true
+					},
+					$(go.Shape, {
+						strokeWidth: 1,
+						// stroke: 'red',
+					}, new go.Binding('stroke', 'isP2PForce', function(value) {
+						return value ? 'red' : 'black';
+					})),
+					$(go.Shape, {
+						toArrow: "Standard",
+						stroke: null,
+						// fill: 'red'
+					}, new go.Binding('fill', 'isP2PForce', function(value) {
+						return value ? 'red' : 'black';
+					}))
+				);
+			}
+
+			function createNodeTemplate() {
+				var width = 20;
+				var $ = go.GraphObject.make;
+
+				return $(go.Node, "Auto", {
+						width: width + 10,
+						height: 30,
+					},
+					new go.Binding("location", "location", go.Point.parse).makeTwoWay(go.Point.stringify),
+					$(go.Shape, "RoundedRectangle", {
+							"fill": "green",
+							// color: 'red',
+						},
+						new go.Binding('fill', 'background'),
+						new go.Binding('fill', 'isLocked', function(isLocked) {
+							return isLocked ?
+								'red' :
+								'green'
+						})
+					),
+					$(go.TextBlock, {
+							margin: 3,
+							width: width,
+							height: 20
+						},
+						new go.Binding("text", "key"))
+				);
+			}
+		});
+	</script>
+</head>
+
+<body>
+	<div class="diagrams">
+		<div id="originalDiagramDiv"></div>
+		<div id="myDiagramDiv"></div>
+	</div>
+	<div id="types">
+		<button id="tree" default></button>
+		<button id="averageCircle"></button>
+		<button id="splitCircle"></button>
+		<button id="oneCircle"></button>
+		<button id="force"></button>
+		<button id="extendNeighbor"></button>
+		<button id="symmetric"></button>
+	</div>
+	<div>
+		<input type="button" id="forceDirected" value="forceDirected">
+		<input type="button" id="forceDirectedPartial" value="forceDirectedPartial">
+		<input type="button" id="zoomToFit" value="zoomToFit">
+		<input type="button" id="zoomToDefault" value="zoomToDefault">
+	</div>
+	<div>
+		<input id="treeLayout" name="layoutType" type="radio" value="tree"><label for="treeLayout"> tree</label>
+		<input id="forceDirectionLayout" name="layoutType" type="radio" value="forceDirected" checked="true"><label for="forceDirectionLayout"> force directed</label>
+		<input id="circleLayout" name="layoutType" type="radio" value="circle"><label for="circleLayout"> circle</label>
+
+		<button id="layoutOriginalDiagram">Layout Left</button>
+		<button id="layoutNewDiagram">Layout Right</button>
+
+	</div>
+</body>
+
+</html>
